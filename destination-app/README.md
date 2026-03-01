@@ -8,7 +8,7 @@ Postgres/PostGIS/pgRouting.
 
 - `GET /api` - API readiness probe
 - `GET /api/health/db` - Database connectivity probe
-- `POST /api/directions` - Directions request API used by `destination_bot.py`
+- `POST /api/directions` - Directions request API used by `bot/destination_bot.py`
 
 Example request:
 

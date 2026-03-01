@@ -20,22 +20,22 @@ flowchart LR
 
 ## Components
 
-- Bot entrypoint: `destination_bot.py`
-- Bot basic commands: `cogs/basic.py`
+- Bot entrypoint: `bot/destination_bot.py`
+- Bot basic commands: `bot/cogs/basic.py`
 - Destination App API: `destination-app/src/server/api/app.ts`
 - Directions logic: `destination-app/src/server/directions/service.ts`
-- Compose orchestration: `docker-compose.yml`
+- Compose orchestration: `infra/docker-compose.yml`
 
 ## Message Flow
 
 ### `/start`
 
-- Parsed by `destination_bot.py`
+- Parsed by `bot/destination_bot.py`
 - Saved in bot storage (`data/directions_starts.json`) keyed by sender
 
 ### `/destination`
 
-- Parsed by `destination_bot.py`
+- Parsed by `bot/destination_bot.py`
 - Bot loads saved `/start` for sender
 - Bot calls `POST /api/directions` on Destination App
 - Destination App resolves locations and computes route steps
@@ -43,7 +43,7 @@ flowchart LR
 
 ### `/directions_clear`
 
-- Parsed by `destination_bot.py`
+- Parsed by `bot/destination_bot.py`
 - Sender-specific start state is removed from bot storage
 
 ## API Contract Used By Bot
@@ -79,5 +79,5 @@ Error responses include:
 
 ## Notes
 
-- Active directions flow is API-proxy based via `destination_bot.py`.
-- `config/cogs/directions.py` remains in repo as legacy reference and is not the active path.
+- Active directions flow is API-proxy based via `bot/destination_bot.py`.
+- `bot/config/cogs/directions.py` remains in repo as legacy reference and is not the active path.

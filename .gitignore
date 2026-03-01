@@ -4,6 +4,8 @@ __pycache__/
 data/
 config/lxmf
 .env
+infra/.env
 destination-app/.content-collections/
-config/identity
-config/announce
+bot/config/identity
+bot/config/announce
+bot/config/lxmf

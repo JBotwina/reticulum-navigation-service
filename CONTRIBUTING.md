@@ -12,18 +12,18 @@ Thanks for contributing to Destination Bot.
 ## Quickstart
 
 ```bash
-cp .env.example .env
+cp infra/.env.example infra/.env
 cp destination-app/.env.example destination-app/.env
-docker compose up -d --build
+docker compose --env-file infra/.env -f infra/docker-compose.yml up -d --build
 ```
 
 Then verify:
 
 ```bash
-docker compose ps
+docker compose --env-file infra/.env -f infra/docker-compose.yml ps
 curl -s http://localhost:3000/api
 curl -s http://localhost:3000/api/health/db
-docker compose logs --tail=120 bot
+docker compose --env-file infra/.env -f infra/docker-compose.yml logs --tail=120 bot
 ```
 
 ## Validation
@@ -44,7 +44,7 @@ bun --bun run format
 
 ## Development Notes
 
-- Bot entrypoint is `destination_bot.py`.
+- Bot entrypoint is `bot/destination_bot.py`.
 - Directions are proxied to `destination-app` via `POST /api/directions`.
 - Keep command UX stable for LXMF users (`/start`, `/destination`, `/directions_clear`).
 - Prefer modular functions and keep responsibilities narrowly scoped.

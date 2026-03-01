@@ -42,7 +42,7 @@ services:
         "bun install && bun --bun run dev --host 0.0.0.0 --port 3000",
       ]
     env_file:
-      - ./destination-app/.env
+      - ../destination-app/.env
     environment:
       POSTGRES_HOST: localhost
       POSTGRES_PORT: "5432"
@@ -53,7 +53,7 @@ services:
       GEOCODER_USER_AGENT: destination_directions_bot
       DIRECTIONS_SPEED_KMH: "40"
     volumes:
-      - ./:/app
+      - ../destination-app:/app/destination-app
     network_mode: "host"
     restart: unless-stopped
     healthcheck:
@@ -74,7 +74,7 @@ services:
 
   bot:
     build:
-      context: .
+      context: ../bot
       network: host
     platform: linux/arm64
     container_name: destination-bot
@@ -99,8 +99,8 @@ services:
       PYTHONUNBUFFERED: "1"
       PYTHONDONTWRITEBYTECODE: "1"
     volumes:
-      - ./config:/app/config
-      - ./data:/app/data
+      - ../bot/config:/app/config
+      - ../data:/app/data
       - ${RETICULUM_CONFIG_PATH:-/home/your-user/.reticulum}:/root/.reticulum:ro
     tmpfs:
       - /tmp:size=64m,mode=1777
