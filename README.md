@@ -1,155 +1,164 @@
-# Destination Bot
+# Destination Bot (Docker-Only Setup)
 
-An LXMF bot for the Reticulum Network, built with [LXMFy](https://lxmfy.quad4.io/). It responds to messages from Nomad Network, Sideband, and other LXMF clients.
+Destination Bot is an LXMF/Reticulum bot that proxies directions requests to Destination App (`destination-app`) and returns responses over LXMF.
+
+This guide is Docker-only: no local Python or Bun install is required.
+
+## What Runs In Docker
+
+- `postgres` (PostGIS + pgRouting)
+- `destination-app` (Bun + Elysia API on port `3000`)
+- `bot` (LXMF bot runtime)
 
 ## Prerequisites
 
-- Python 3.11+
-- [uv](https://docs.astral.sh/uv/) (Python package manager)
-- Docker + Docker Compose (for Postgres/PostGIS/pgRouting)
-- Reticulum installed and running on your network
-- A reachable Reticulum transport node
-- A separate LXMF client device (Nomad Network, Sideband, or other LXMF client) to send test messages to the bot
+- Docker + Docker Compose
+- Reticulum available on the host (set `RETICULUM_CONFIG_PATH` in `.env` to your host path, for example `/home/your-user/.reticulum`)
+- An LXMF client (NomadNet/Sideband/etc.) for testing
+- A transport node and a separate client device are recommended for realistic mesh testing
 
-## Reticulum Network Requirements
+## 1) Environment Setup
 
-This bot depends on a working Reticulum network path, not just local containers.
-
-- Reticulum project: [reticulum.network](https://reticulum.network/)
-- Reticulum manual: [reticulum.network/manual](https://reticulum.network/manual/)
-- Nomad Network (example LXMF client): [NomadNet on GitHub](https://github.com/markqvist/NomadNet)
-
-Recommended topology for reliable testing:
-
-1) Device A: host the bot and Reticulum instance.
-2) Transport node: a reachable node in your mesh that forwards traffic.
-3) Device B: separate client device that sends LXMF commands to the bot.
-
-Why separate devices matter:
-
-- It validates real network propagation instead of same-device loopback behavior.
-- It confirms announces and reply paths work across the mesh.
-- It helps isolate issues (Reticulum pathing vs bot/API logic).
-
-Quick Reticulum troubleshooting checklist:
-
-1) Verify the bot announces on startup:
-   - `docker compose logs --tail=120 bot`
-   - Look for `LXMF Router ready to receive on:` and `Initial announce sent`.
-2) Verify the transport node is reachable from both devices.
-3) Send a simple command first from Device B:
-   - `/hello`
-   - If this fails, fix Reticulum pathing before debugging directions.
-4) Check the bot receives incoming messages:
-   - `docker compose logs -f bot`
-   - Look for `Message from <hash>: <content>`.
-5) Check Destination App API health independently:
-   - `curl -s http://localhost:3000/api`
-   - `curl -s http://localhost:3000/api/health/db`
-6) If API is healthy but replies fail, verify bot environment:
-   - `docker compose exec bot env | rg DESTINATION_APP`
-   - Confirm `DESTINATION_APP_BASE_URL` points to your running Destination App instance.
-
-## Setup
-
-```bash
-uv sync
-```
-
-## Run
-
-```bash
-uv run python destination_bot.py
-```
-
-Or with uv directly:
-
-```bash
-uv run destination_bot.py
-```
-
-The bot will print its LXMF address. Message it from Nomad Network or any LXMF client to interact.
-
-## Commands
-
-- `/hello` - Greeting
-- `/about` - About the bot
-- `/page` - Destination Nomad Network page info
-- `/start <address_or_lat,lon>` - Save start location for directions
-- `/destination <address_or_lat,lon>` - Get directions from saved start via Destination App API
-- `/directions_clear` - Clear saved start location
-- `/help` - List commands
-
-Directions are proxied through the Destination App Elysia API. The bot stores your `/start`
-location per sender, calls Destination App on `/destination`, then returns the formatted result over LXMF.
-
-## For Developers
-
-- Contributor guide: [CONTRIBUTING.md](CONTRIBUTING.md)
-- License: [LICENSE](LICENSE)
-- Architecture: [docs/architecture.md](docs/architecture.md)
-
-Quickstart:
+Create root env file:
 
 ```bash
 cp .env.example .env
+```
+
+Create app env file:
+
+```bash
 cp destination-app/.env.example destination-app/.env
+```
+
+Set your DB password in `.env` (example):
+
+```bash
+POSTGRES_PASSWORD=replace-me
+```
+
+## Environment Variable Mapping
+
+For this Docker-only setup, there are two env files with different ownership:
+
+- Root `.env` is used by Docker Compose variable substitution and bot/runtime config values defined in `docker-compose.yml`.
+- `destination-app/.env` is loaded directly by the `destination-app` service through `env_file`.
+- For normal setup, edit `.env` and `destination-app/.env`; do not edit `docker-compose.yml` unless you are intentionally changing infrastructure defaults.
+
+| Variable | Where to set it | Used by | Notes/default |
+| --- | --- | --- | --- |
+| `RETICULUM_CONFIG_PATH` | `.env` | `bot` volume mount for host Reticulum config | Default placeholder: `/home/your-user/.reticulum`; update this per machine. |
+| `POSTGRES_PASSWORD` | Both `.env` and `destination-app/.env` (keep identical) | Compose substitution for `postgres`, `destination-app`, and `bot` DB auth | Required secret; default fallback in compose is `your_password_here` and should not be used. |
+| `DESTINATION_APP_BASE_URL` | `.env` | `bot` -> Destination App API base URL | Default: `http://localhost:3000`. |
+| `DESTINATION_APP_TIMEOUT_SECONDS` | `.env` | `bot` outbound HTTP timeout | Default: `15`. |
+| `LOG_LEVEL` | `.env` | `bot` logging level | Typical values: `DEBUG`, `INFO`, `WARNING`, `ERROR`; default in examples: `INFO`. |
+| `BOT_ADMINS` | `.env` | `bot` admin allowlist parsing | Comma-separated LXMF hashes; keep empty to disable admin-only users. |
+| `DATABASE_URL` | `destination-app/.env` | `destination-app` DB client config | Should match your Postgres host/user/password/db values. |
+| `POSTGRES_HOST` | `destination-app/.env` | `destination-app` and `bot` DB host config | Docker host-network default: `localhost`. |
+| `POSTGRES_PORT` | `destination-app/.env` | `destination-app` and `bot` DB port config | Default: `5432`. |
+| `POSTGRES_DB` | `destination-app/.env` | `destination-app` and `bot` database name | Default: `spatial_db`. |
+| `POSTGRES_USER` | `destination-app/.env` | `destination-app` and `bot` database user | Default: `pi`. |
+| `PGR_WAYS_TABLE` | `destination-app/.env` | `destination-app` and `bot` routing queries | Default: `ways`. |
+| `PGR_VERTICES_TABLE` | `destination-app/.env` | `destination-app` and `bot` routing queries | Default: `ways_vertices_pgr`. |
+| `GEOCODER_USER_AGENT` | `destination-app/.env` | `destination-app` and `bot` geocoder client | Default: `destination_directions_bot`. |
+| `DIRECTIONS_SPEED_KMH` | `destination-app/.env` | `destination-app` and `bot` ETA calculations | Default: `40`. |
+
+### Common pitfalls
+
+- `POSTGRES_PASSWORD` mismatch between `.env` and `destination-app/.env` causes authentication or connection failures.
+- Changing values in `docker-compose.yml` environment defaults without updating the env files leads to confusing drift between intended and actual runtime values.
+- `DESTINATION_APP_BASE_URL` set to the wrong host/port causes bot direction calls to fail (for this stack, use the API exposed on `localhost:3000` unless you intentionally changed it).
+
+## 2) Start The Stack
+
+```bash
 docker compose up -d --build
 ```
 
-Then verify:
+Check status:
 
 ```bash
 docker compose ps
+```
+
+Expected healthy services:
+
+- `pgrouting-pi` (healthy)
+- `destination-app` (healthy)
+- `destination-bot` (started)
+
+## 3) Verify API + Bot
+
+API health:
+
+```bash
 curl -s http://localhost:3000/api
 curl -s http://localhost:3000/api/health/db
-docker compose logs --tail=120 bot
 ```
 
-## Directions Stack with Docker Compose
-
-PostgreSQL, PostGIS, and pgRouting are managed by Docker Compose.
-
-### Start, restart, and rebuild
+Follow logs:
 
 ```bash
-docker compose up -d --build
+docker compose logs -f --tail=120 destination-app
+docker compose logs -f --tail=120 bot
 ```
 
-```bash
-docker compose down
-```
+In bot logs, look for:
 
-```bash
-docker compose restart
-```
-
-```bash
-docker compose down && docker compose up -d
-```
-
-When code changes are made to the bot image, rebuild once:
-
-```bash
-docker compose down && docker compose up -d --build
-```
-
-### Verify bot is online on Reticulum
-
-```bash
-docker compose ps
-docker compose logs --tail=120 bot
-```
-
-Look for:
-
-- `Configuration loaded from /root/.reticulum/config`
-- `LXMF Router ready to receive on: <hash>`
+- `LXMF Router ready to receive on:`
 - `Initial announce sent`
 
-### Message test from NomadNet
+## 4) One-Time OSM Import (Required Per Region Dataset)
 
-In NomadNet, send commands as separate messages to the bot LXMF address:
+Directions need routing graph tables (`ways`, `ways_vertices_pgr`).  
+Container restarts do not create these automatically.
+
+Download extract:
+
+```bash
+mkdir -p ./data/osm
+curl --retry 5 --retry-delay 5 --fail -L "https://overpass-api.de/api/map?bbox=-74.0090,40.6950,-73.9350,40.7350" -o ./data/osm/region.osm
+```
+
+Validate file:
+
+```bash
+ls -lh ./data/osm/region.osm
+tail -n 3 ./data/osm/region.osm
+```
+
+The file should end with `</osm>`.
+
+Copy + import:
+
+```bash
+docker cp ./data/osm/region.osm pgrouting-pi:/tmp/region.osm
+docker compose exec postgres bash -lc 'apt-get update && apt-get install -y osm2pgrouting && PGPASSWORD="$POSTGRES_PASS" osm2pgrouting -f /tmp/region.osm -h 127.0.0.1 -d "$POSTGRES_DB" -U "$POSTGRES_USER" -W "$POSTGRES_PASS"'
+```
+
+Verify routing tables:
+
+```bash
+docker compose exec postgres bash -lc 'PGPASSWORD="$POSTGRES_PASS" psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT to_regclass('\''public.ways'\''), to_regclass('\''public.ways_vertices_pgr'\'');"'
+```
+
+Both values must be non-null.
+
+Quick row-count sanity check:
+
+```bash
+docker compose exec postgres bash -lc 'PGPASSWORD="$POSTGRES_PASS" psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT COUNT(*) AS ways_count FROM ways; SELECT COUNT(*) AS vertices_count FROM ways_vertices_pgr;"'
+```
+
+Both counts should be greater than zero.
+
+## 5) LXMF Command Test
+
+From your LXMF client, send:
+
+```text
+/hello
+```
 
 ```text
 /start 40.7145,-73.9630
@@ -159,113 +168,48 @@ In NomadNet, send commands as separate messages to the bot LXMF address:
 /destination 40.7081,-73.9571
 ```
 
-If geocoding is unavailable, prefer `lat,lon` coordinates over street addresses.
-
-### OSM import for pgRouting (required once per region dataset)
-
-The `/destination` command requires road graph tables (`ways`, `ways_vertices_pgr`). Restarting containers does not create these tables. Import OSM data once for each map region you want to support.
-
-Why this is required:
-
-- pgRouting computes routes from a road graph in Postgres, not directly from raw addresses.
-- The OSM import creates the graph tables used by directions (`ways`, `ways_vertices_pgr`).
-- Without import, the API has no drivable network to route on.
-
-Example behavior without OSM import:
-
 ```text
-/start 26 Broadway, Brooklyn, NY 11249
-/destination 200 Bedford Ave, Brooklyn, NY 11249
--> Directions service is temporarily unavailable.
+/directions_clear
 ```
 
-Example behavior after OSM import:
+## Troubleshooting
 
-```text
-/start 26 Broadway, Brooklyn, NY 11249
-/destination 200 Bedford Ave, Brooklyn, NY 11249
--> Directions
--> Steps:
--> 1. Head on ...
--> 2. Turn left/right ...
-```
+- Bot receives nothing:
+  - Verify `RETICULUM_CONFIG_PATH` in `.env` points to a valid host Reticulum directory
+  - Check announce lines in bot logs
+  - Verify transport pathing between devices
+- `/hello` works but `/destination` fails:
+  - Verify API health endpoints
+  - Verify routing tables exist (`ways`, `ways_vertices_pgr`)
+  - Verify bot env includes:
+    - `DESTINATION_APP_BASE_URL`
+    - `DESTINATION_APP_TIMEOUT_SECONDS`
+- OSM download/import problems:
+  - `curl: (23) Permission denied`: fix ownership (example: `sudo chown -R james:james ./data`)
+  - timeout/download failures: retry with smaller bbox
 
-Quick DB check (confirms graph data exists):
+## Useful Commands
+
+Restart only bot:
 
 ```bash
-docker compose exec postgres bash -lc 'PGPASSWORD="$POSTGRES_PASS" psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT COUNT(*) AS ways_count FROM ways; SELECT COUNT(*) AS vertices_count FROM ways_vertices_pgr;"'
+docker compose restart bot
 ```
 
-Both counts should be greater than zero.
-
-1) Download an extract:
+Rebuild bot + app:
 
 ```bash
-mkdir -p ./data/osm
-curl --retry 5 --retry-delay 5 --fail -L "https://overpass-api.de/api/map?bbox=-74.0090,40.6950,-73.9350,40.7350" -o ./data/osm/region.osm
+docker compose up -d --build destination-app bot
 ```
 
-2) Validate file integrity:
+Stop everything:
 
 ```bash
-ls -lh ./data/osm/region.osm
-tail -n 3 ./data/osm/region.osm
+docker compose down
 ```
 
-The file should end with `</osm>`.
+## Related Docs
 
-3) Copy into the Postgres container and import:
-
-```bash
-docker cp ./data/osm/region.osm pgrouting-pi:/tmp/region.osm
-```
-
-```bash
-docker compose exec postgres bash -lc 'apt-get update && apt-get install -y osm2pgrouting && PGPASSWORD="$POSTGRES_PASS" osm2pgrouting -f /tmp/region.osm -h 127.0.0.1 -d "$POSTGRES_DB" -U "$POSTGRES_USER" -W "$POSTGRES_PASS"'
-```
-
-4) Verify routing tables:
-
-```bash
-docker compose exec postgres bash -lc 'PGPASSWORD="$POSTGRES_PASS" psql -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT to_regclass('\''public.ways'\''), to_regclass('\''public.ways_vertices_pgr'\'');"'
-```
-
-Both values must be non-null.
-
-### Troubleshooting
-
-- `Could not find that start location.`: address geocoding failed; try coordinate input.
-- `Directions service is temporarily unavailable.`: routing tables likely missing or DB query failed.
-- `Peer authentication failed for user ...`: use `psql -h 127.0.0.1` with `PGPASSWORD` to force password auth.
-- `curl: (23) Permission denied`: fix local ownership, for example `sudo chown -R james:james ./data`.
-- `curl: (18)` or `504 Gateway Timeout`: retry download and use a smaller bbox.
-
-### Do I need to import every time?
-
-No. Import only when initializing or changing map data. Normal container restarts do not require re-importing.
-
-### Environment
-
-Set `POSTGRES_PASSWORD` in your shell before `docker compose up`, for example:
-
-```bash
-export POSTGRES_PASSWORD='replace-me'
-```
-
-The bot uses these environment variables:
-
-- `DESTINATION_APP_BASE_URL` (default `http://localhost:3000`)
-- `DESTINATION_APP_TIMEOUT_SECONDS` (default `15`)
-
-Destination App (the API backend) uses these environment variables:
-
-- `POSTGRES_HOST` (default `localhost` when running on host, `postgres` in compose)
-- `POSTGRES_PORT` (default `5432`)
-- `POSTGRES_DB` (default `spatial_db`)
-- `POSTGRES_USER` (default `pi`)
-- `POSTGRES_PASSWORD` (default `your_password_here`)
-- `PGR_WAYS_TABLE` (default `ways`)
-- `PGR_VERTICES_TABLE` (default `ways_vertices_pgr`)
-- `GEOCODER_USER_AGENT` (default `destination_directions_bot`)
-- `NOMINATIM_MIN_INTERVAL_SECONDS` (default `1.0`)
-- `DIRECTIONS_SPEED_KMH` (default `40`)
+- Contributor guide: `CONTRIBUTING.md`
+- Architecture: `docs/architecture.md`
+- License: `LICENSE`

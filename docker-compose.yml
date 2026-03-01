@@ -94,13 +94,14 @@ services:
       DIRECTIONS_SPEED_KMH: "40"
       DESTINATION_APP_BASE_URL: ${DESTINATION_APP_BASE_URL:-http://localhost:3000}
       DESTINATION_APP_TIMEOUT_SECONDS: ${DESTINATION_APP_TIMEOUT_SECONDS:-15}
-      LOG_LEVEL: INFO
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      BOT_ADMINS: ${BOT_ADMINS:-}
       PYTHONUNBUFFERED: "1"
       PYTHONDONTWRITEBYTECODE: "1"
     volumes:
       - ./config:/app/config
       - ./data:/app/data
-      - /home/james/.reticulum:/root/.reticulum:ro
+      - ${RETICULUM_CONFIG_PATH:-/home/your-user/.reticulum}:/root/.reticulum:ro
     tmpfs:
       - /tmp:size=64m,mode=1777
     logging:
